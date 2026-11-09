@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Antigravity 粒子背景",
+    "description": "在 Web UI 背后铺一层跟随鼠标的 WebGL 粒子场，复刻自 antigravity.google。"
+  }
+}

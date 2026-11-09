@@ -1,0 +1,12 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="agb-icon-gradient" x1="10" y1="10" x2="54" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2c64ed"/>
+      <stop offset="0.55" stop-color="#f84242"/>
+      <stop offset="1" stop-color="#ffcf03"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="21" fill="url(#agb-icon-gradient)"/>
+  <circle cx="32" cy="32" r="8" fill="#ffffff" fill-opacity="0.92"/>
+  <circle cx="32" cy="32" r="30" stroke="url(#agb-icon-gradient)" stroke-opacity="0.35" stroke-width="1.5"/>
+</svg>

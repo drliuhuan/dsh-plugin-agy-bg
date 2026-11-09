@@ -1,0 +1,10 @@
+# dsh-plugin-antigravity-bg — bundle patch.
+#
+# Adds only this plugin's own Loader row; it replaces no official DSH component.
+#
+# The row `name` must stay the BARE package name: the Web client module scanner
+# resolves a package's `dsh.client` browser artifact (client.js) from the Loader
+# row name. Subpath names do not compose a browser bundle.
+- insert:
+    - id: antigravity-bg
+      name: dsh-plugin-antigravity-bg

@@ -1,0 +1,69 @@
+{
+  "name": "dsh-plugin-antigravity-bg",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness Web UI plugin: a mouse-following WebGL particle background recreated from antigravity.google, with a Settings toggle and light/dark palettes.",
+  "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "drliuhuan",
+    "email": "drliuhuan@outlook.com",
+    "url": "https://github.com/drliuhuan"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "docs",
+    "README.zh.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node --check client.js && node --check index.js"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "background",
+    "particles",
+    "webgl",
+    "antigravity"
+  ],
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drliuhuan/dsh-plugin-antigravity-bg.git"
+  },
+  "homepage": "https://github.com/drliuhuan/dsh-plugin-antigravity-bg#readme",
+  "bugs": {
+    "url": "https://github.com/drliuhuan/dsh-plugin-antigravity-bg/issues"
+  }
+}
