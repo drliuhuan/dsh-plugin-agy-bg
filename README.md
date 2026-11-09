@@ -31,13 +31,13 @@ The switch in Settings → General:
 
 ### Plugins UI
 
-Sidebar → **Plugins → Add plugin**, enter this package directory (or an npm/git spec), then **Enable now**. Refresh the Web UI once.
+Sidebar → **Plugins → Add plugin**, enter `dsh-plugin-agy-bg` (the npm package) or this repository's package directory, then **Enable now**. Refresh the Web UI once.
 
 ### CLI
 
 ```sh
 # 1) install as a link: dependency into the web profile
-dsh plugin --profile web add link:/path/to/dsh-plugin-agy-bg
+dsh plugin --profile web add dsh-plugin-agy-bg   # or link:/path/to/dsh-plugin-agy-bg for a local checkout
 
 # 2) the plugin is usually added to the bundle list automatically; if not, add it to
 #    ~/.dsh/profiles/web/package.json → dsh.profile.bundles (after dsh-base / dsh-web-app)

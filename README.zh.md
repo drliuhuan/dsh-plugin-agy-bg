@@ -31,13 +31,13 @@ Settings → General 里的开关：
 
 ### 插件管理器
 
-Sidebar → **Plugins → Add plugin**，填本包目录或 npm/git 包名，然后 **Enable now**。安装后刷新一次 Web UI。
+Sidebar → **Plugins → Add plugin**，填 npm 包名 `dsh-plugin-agy-bg`（或本包目录），然后 **Enable now**。安装后刷新一次 Web UI。
 
 ### CLI
 
 ```sh
 # 1) 以 link: 依赖装进 web profile
-dsh plugin --profile web add link:/path/to/dsh-plugin-agy-bg
+dsh plugin --profile web add dsh-plugin-agy-bg   # 本地目录用 link:/path/to/dsh-plugin-agy-bg
 
 # 2) 通常会自动加进 bundles；如果没有，手动加到
 #    ~/.dsh/profiles/web/package.json → dsh.profile.bundles（dsh-base / dsh-web-app 之后）
