@@ -257,6 +257,15 @@
 
       syncComposerFade();
 
+      // On Windows the shell paints `--dsw-alias-bg-base` on the center column
+      // itself (`[data-windows-titlebar] .mP3x-q_centerCol`). That element is a
+      // direct child of the frame, not a descendant, so the scan below never
+      // reached it: the whole workspace stayed opaque and the canvas only leaked
+      // through the column's rounded top-left corner. Tag it as well.
+      if (sameRgb(parseRgb(window.getComputedStyle(center).backgroundColor), base)) {
+        mark(center);
+      }
+
       var nodes = center.querySelectorAll('*');
       for (var i = 0; i < nodes.length; i++) {
         var element = nodes[i];
