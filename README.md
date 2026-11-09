@@ -59,7 +59,7 @@ Uninstall by removing the dependency and the bundle entry (or use the Plugins pa
 - **Parameters** — the same values as the antigravity.google hero: `density 230`, `ringWidth 0.006`, `ringWidth2 0.107`, `ringDisplacement 0.62`, `particlesScale 0.59`, colors `#2c64ed / #f84242 / #ffcf03`. Dark theme uses the palette/parameters of the site's footer CTA.
 - **Cursor mapping** — the pointer is mapped onto the z=0 plane and multiplied by `0.175` to get the ring center; the ring eases toward it at 0.02/frame and its radius breathes with `0.175 + sin(t)·0.03 + cos(3t)·0.02`.
 - **Transparency strategy** — only containers that cover the full page height and use the theme base color are tagged `data-dsh-antigravity-surface="transparent"` (the shell frame plus the large center surfaces). The composer, code blocks, cards and dialogs keep their own fills. The scan repeats every 2 s so client-side navigation is handled.
-- **Composer fade** — DSH paints a ~36 px `composerSeat` gradient above the composer; while the plugin is active that gradient is removed so particles reach the input edge. Turning the plugin off restores it.
+- **Composer fade & status-bar veil** — DSH paints a ~36 px `composerSeat` gradient above the composer; while the plugin is active that gradient is removed so particles reach the input edge. A fixed canvas, exactly as wide as the composer card, re-paints the particle field over the band below and behind the card (`#dsh-antigravity-veil`): the transcript scrolling underneath is covered while the visible background stays the live particle field. Turning the plugin off restores both.
 - **Switch** — a React row registered into `settings.general.item`, with English/Chinese copy registered through the plugin locale namespace.
 
 ## Development

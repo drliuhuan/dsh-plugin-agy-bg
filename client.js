@@ -604,7 +604,7 @@
         stencil: false,
         powerPreference: 'high-performance',
         premultipliedAlpha: false,
-        preserveDrawingBuffer: false,
+        preserveDrawingBuffer: true,
       });
       if (!gl) throw new Error('WebGL2 is not available');
       this.gl = gl;
@@ -1087,7 +1087,11 @@
     // gradient reads as a solid band, so the tag removes it.
     '[data-dsh-antigravity-fade="off"]{background-image:none !important}',
     '[data-dsh-antigravity-fade="off"]::before,[data-dsh-antigravity-fade="off"]::after{',
-    'background-image:none !important}'
+    'background-image:none !important}',
+    // The veiled copy of the particle field that covers the transcript under
+    // the composer/status bar (see syncVeilGeometry).
+    '#dsh-antigravity-veil{position:fixed;display:block;pointer-events:none;z-index:8;opacity:0}',
+    '#dsh-antigravity-veil[data-visible="true"]{opacity:1}'
   ].join('');
 
   var ROW_CSS = [
@@ -1122,6 +1126,107 @@
     var themeObserver = null;
     var active = false;
 
+    /* ---------------- status-bar veil ----------------
+       The sticky composer seat used to hide the transcript scrolling underneath
+       with a gradient painted in the page colour. The plugin removes that
+       gradient so the particle field reaches the composer edge, which lets the
+       last few pixels below the input card show scrolled text over the canvas.
+       The veil is a fixed canvas, exactly as wide as the composer card, that
+       re-paints the particle field over that band every frame: the text is
+       covered and the background stays identical, because the veil is a copy of
+       the very pixels that would otherwise be visible there. */
+    var veil = null;
+    var veilCtx = null;
+    var veilLeft = 0;
+    var veilTop = 0;
+    var veilWidth = 0;
+    var veilHeight = 0;
+
+    /** The composer input card — [data-composer-card], or the largest card. */
+    function findComposerCard() {
+      var seat = document.querySelector('[data-composer-seat]');
+      if (!seat) return null;
+      var markedCard = seat.querySelector('[data-composer-card]');
+      if (markedCard) return markedCard;
+      var candidates = seat.querySelectorAll('[class*="_card"]');
+      var best = null;
+      var bestArea = 0;
+      for (var i = 0; i < candidates.length; i++) {
+        var rect = candidates[i].getBoundingClientRect();
+        var area = rect.width * rect.height;
+        if (area > bestArea) {
+          best = candidates[i];
+          bestArea = area;
+        }
+      }
+      return best;
+    }
+
+    function createVeil() {
+      if (veil) return;
+      veil = document.createElement('canvas');
+      veil.id = 'dsh-antigravity-veil';
+      veil.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(veil);
+      veilCtx = veil.getContext('2d');
+    }
+
+    function hideVeil() {
+      if (veil) veil.removeAttribute('data-visible');
+    }
+
+    /**
+     * Cover the seat band below/behind the composer card with a copy of the
+     * particle field. Only the card's own width is veiled, so the workspace on
+     * both sides keeps showing the live canvas untouched.
+     */
+    function syncVeilGeometry() {
+      if (!active || !field || !field.ready) return;
+      var card = findComposerCard();
+      var seat = document.querySelector('[data-composer-seat]');
+      if (!card || !seat) { hideVeil(); return; }
+      var cardRect = card.getBoundingClientRect();
+      var seatRect = seat.getBoundingClientRect();
+      var bottom = Math.min(seatRect.bottom, window.innerHeight);
+      var width = cardRect.width;
+      var height = bottom - cardRect.top;
+      if (width <= 0 || height <= 0) { hideVeil(); return; }
+      if (!veil) createVeil();
+      if (!veilCtx) return;
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var backingWidth = Math.max(1, Math.round(width * dpr));
+      var backingHeight = Math.max(1, Math.round(height * dpr));
+      veilLeft = cardRect.left;
+      veilTop = cardRect.top;
+      veilWidth = width;
+      veilHeight = height;
+      veil.style.left = veilLeft + 'px';
+      veil.style.top = veilTop + 'px';
+      veil.style.width = width + 'px';
+      veil.style.height = height + 'px';
+      if (veil.width !== backingWidth || veil.height !== backingHeight) {
+        veil.width = backingWidth;
+        veil.height = backingHeight;
+      }
+      veil.setAttribute('data-visible', 'true');
+    }
+
+    function drawVeil() {
+      if (!veil || !veilCtx || !field || !field.ready) return;
+      var source = field.canvas || canvas;
+      if (!source || !source.width || !source.height) return;
+      var scaleX = source.width / Math.max(1, window.innerWidth);
+      var scaleY = source.height / Math.max(1, window.innerHeight);
+      try {
+        veilCtx.clearRect(0, 0, veil.width, veil.height);
+        veilCtx.drawImage(
+          source,
+          veilLeft * scaleX, veilTop * scaleY, veilWidth * scaleX, veilHeight * scaleY,
+          0, 0, veil.width, veil.height
+        );
+      } catch (err) { /* a lost drawing buffer must not break the animation */ }
+    }
+
     function loop(now) {
       if (!active) return;
       frameId = window.requestAnimationFrame(loop);
@@ -1129,6 +1234,7 @@
       var dt = Math.min(Math.max((now - lastTime) / 1000, 0), 0.1);
       lastTime = now;
       field.frame(dt);
+      drawVeil();
     }
 
     function mark(element) {
@@ -1209,6 +1315,8 @@
         if (rect.height < centerRect.height * 0.5) continue;
         mark(element);
       }
+
+      syncVeilGeometry();
     }
 
     function scheduleScan() {
@@ -1272,9 +1380,11 @@
       active = true;
       syncSurfaces();
       syncPalette();
+      syncVeilGeometry();
 
       window.addEventListener('resize', onResize);
       window.addEventListener('click', scheduleScan, { passive: true });
+      document.addEventListener('input', scheduleScan, true);
       document.addEventListener('visibilitychange', onVisibilityChange);
 
       if (typeof MutationObserver === 'function') {
@@ -1313,6 +1423,7 @@
       }
       window.removeEventListener('resize', onResize);
       window.removeEventListener('click', scheduleScan);
+      document.removeEventListener('input', scheduleScan, true);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (themeObserver) {
         themeObserver.disconnect();
@@ -1326,6 +1437,10 @@
         try { faded[j].removeAttribute(FADE_ATTR); } catch (err) { /* detached */ }
       }
       faded = [];
+      if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
+      veil = null;
+      veilCtx = null;
+      veilLeft = veilTop = veilWidth = veilHeight = 0;
       if (field && typeof field.dispose === 'function') field.dispose();
       field = null;
       if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);

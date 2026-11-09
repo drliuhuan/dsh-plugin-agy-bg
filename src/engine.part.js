@@ -403,7 +403,7 @@
         stencil: false,
         powerPreference: 'high-performance',
         premultipliedAlpha: false,
-        preserveDrawingBuffer: false,
+        preserveDrawingBuffer: true,
       });
       if (!gl) throw new Error('WebGL2 is not available');
       this.gl = gl;
