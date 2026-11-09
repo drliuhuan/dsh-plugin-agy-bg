@@ -1,4 +1,4 @@
-# dsh-plugin-antigravity-bg
+# dsh-plugin-agy-bg
 
 DeepSeek Harness Web UI 插件：把 [antigravity.google](https://antigravity.google/) 首页那层**跟随鼠标的 WebGL 粒子背景**铺到 Harness 界面背后。
 
@@ -37,7 +37,7 @@ Sidebar → **Plugins → Add plugin**，填本包目录或 npm/git 包名，然
 
 ```sh
 # 1) 以 link: 依赖装进 web profile
-dsh plugin --profile web add link:/path/to/dsh-plugin-antigravity-bg
+dsh plugin --profile web add link:/path/to/dsh-plugin-agy-bg
 
 # 2) 通常会自动加进 bundles；如果没有，手动加到
 #    ~/.dsh/profiles/web/package.json → dsh.profile.bundles（dsh-base / dsh-web-app 之后）
@@ -49,7 +49,7 @@ web profile 的 HMR 会监听 profile manifest，重组合后刷新页面即可�
 
 ## 使用
 
-- 打开 **Settings → General**，找到「Antigravity 粒子背景」一行，用右侧开关即时开/关；偏好按浏览器保存在 `localStorage` 的 `dsh-plugin-antigravity-bg:v1`。
+- 打开 **Settings → General**，找到「Antigravity 粒子背景」一行，用右侧开关即时开/关；偏好按浏览器保存在 `localStorage` 的 `dsh-plugin-agy-bg:v1`。
 - 浏览器不支持 WebGL2 / 浮点渲染目标时，插件会安静地保持原界面（不会做透明化处理）。
 - 系统开启「减少动态效果」时自动把粒子密度降到 ≤110 并隔帧模拟，和官网行为一致。
 

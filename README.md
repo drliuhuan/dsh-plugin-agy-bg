@@ -1,4 +1,4 @@
-# dsh-plugin-antigravity-bg
+# dsh-plugin-agy-bg
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI plugin that paints the **mouse-following WebGL particle background** from [antigravity.google](https://antigravity.google/) behind the interface.
 
@@ -37,7 +37,7 @@ Sidebar → **Plugins → Add plugin**, enter this package directory (or an npm/
 
 ```sh
 # 1) install as a link: dependency into the web profile
-dsh plugin --profile web add link:/path/to/dsh-plugin-antigravity-bg
+dsh plugin --profile web add link:/path/to/dsh-plugin-agy-bg
 
 # 2) the plugin is usually added to the bundle list automatically; if not, add it to
 #    ~/.dsh/profiles/web/package.json → dsh.profile.bundles (after dsh-base / dsh-web-app)
@@ -49,7 +49,7 @@ Uninstall by removing the dependency and the bundle entry (or use the Plugins pa
 
 ## Usage
 
-- **Settings → General → “Antigravity particle background”** toggles the background instantly. The preference is stored in `localStorage` under `dsh-plugin-antigravity-bg:v1`.
+- **Settings → General → “Antigravity particle background”** toggles the background instantly. The preference is stored in `localStorage` under `dsh-plugin-agy-bg:v1`.
 - With `prefers-reduced-motion: reduce`, the plugin caps density at 110 and simulates every other frame, matching the original site's behavior.
 - If WebGL2 or float render targets are unavailable, nothing is changed visually.
 

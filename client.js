@@ -945,8 +945,8 @@
      * light/dark palettes follow the shell's `body[data-ds-dark-theme]`.
    ------------------------------------------------------------------ */
 
-  var PLUGIN_ID = 'dsh-plugin-antigravity-bg';
-  var STORAGE_KEY = 'dsh-plugin-antigravity-bg:v1';
+  var PLUGIN_ID = 'dsh-plugin-agy-bg';
+  var STORAGE_KEY = 'dsh-plugin-agy-bg:v1';
   var LOCALE_NS = 'antigravity-bg';
   var SURFACE_ATTR = 'data-dsh-antigravity-surface';
   var FADE_ATTR = 'data-dsh-antigravity-fade';

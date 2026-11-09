@@ -1,5 +1,5 @@
 {
-  "name": "dsh-plugin-antigravity-bg",
+  "name": "dsh-plugin-agy-bg",
   "version": "0.1.0",
   "description": "DeepSeek Harness Web UI plugin: a mouse-following WebGL particle background recreated from antigravity.google, with a Settings toggle and light/dark palettes.",
   "type": "module",
@@ -60,10 +60,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/drliuhuan/dsh-plugin-antigravity-bg.git"
+    "url": "git+https://github.com/drliuhuan/dsh-plugin-agy-bg.git"
   },
-  "homepage": "https://github.com/drliuhuan/dsh-plugin-antigravity-bg#readme",
+  "homepage": "https://github.com/drliuhuan/dsh-plugin-agy-bg#readme",
   "bugs": {
-    "url": "https://github.com/drliuhuan/dsh-plugin-antigravity-bg/issues"
+    "url": "https://github.com/drliuhuan/dsh-plugin-agy-bg/issues"
   }
 }

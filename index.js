@@ -1,5 +1,5 @@
 /**
- * @fileoverview Host half of `dsh-plugin-antigravity-bg`.
+ * @fileoverview Host half of `dsh-plugin-agy-bg`.
  *
  * The plugin is presentation-only: the whole feature lives in the browser half
  * (`client.js`), which paints a fixed WebGL canvas behind the shell and adds a
