@@ -1093,7 +1093,12 @@
     // composer seat and kept at z-index -1, so the seat's own stacking context
     // decides the outcome: behind the input card, in front of the transcript.
     '#dsh-antigravity-veil{position:absolute;display:block;pointer-events:none;z-index:-1;opacity:0}',
-    '#dsh-antigravity-veil[data-visible="true"]{opacity:1}'
+    '#dsh-antigravity-veil[data-visible="true"]{opacity:1}',
+    // A fixed strip for the sub-pixel band below the seat. Fixed descendants do
+    // not contribute to the scroll container's scrollable overflow, so unlike an
+    // absolutely positioned element it cannot make the sticky composer wobble.
+    '#dsh-antigravity-veil-tail{position:fixed;display:block;pointer-events:none;z-index:-1;opacity:0}',
+    '#dsh-antigravity-veil-tail[data-visible="true"]{opacity:1}'
   ].join('');
 
   var ROW_CSS = [
@@ -1145,6 +1150,8 @@
        seat's own stacking context keeps the transcript behind the whole group. */
     var veil = null;
     var veilCtx = null;
+    var veilTail = null;
+    var veilTailCtx = null;
     var veilHost = null;
     var veilHostOriginalPosition = null;
     var veilSampleLeft = 0;
@@ -1153,6 +1160,10 @@
     var veilTop = 0;
     var veilWidth = 0;
     var veilHeight = 0;
+    var veilTailSampleLeft = 0;
+    var veilTailSampleTop = 0;
+    var veilTailWidth = 0;
+    var veilTailHeight = 0;
 
     /** The composer input card — [data-composer-card], or the largest card. */
     function findComposerCard() {
@@ -1194,19 +1205,28 @@
         veil.setAttribute('aria-hidden', 'true');
         veilCtx = veil.getContext('2d');
       }
+      if (!veilTail) {
+        veilTail = document.createElement('canvas');
+        veilTail.id = 'dsh-antigravity-veil-tail';
+        veilTail.setAttribute('aria-hidden', 'true');
+        veilTailCtx = veilTail.getContext('2d');
+      }
       if (veilHost === seat && veil.parentNode === seat) return;
       if (veil.parentNode) veil.parentNode.removeChild(veil);
+      if (veilTail.parentNode) veilTail.parentNode.removeChild(veilTail);
       releaseVeilHost();
       if (window.getComputedStyle(seat).position === 'static') {
         veilHostOriginalPosition = seat.style.position;
         seat.style.position = 'relative';
       }
       seat.appendChild(veil);
+      seat.appendChild(veilTail);
       veilHost = seat;
     }
 
     function hideVeil() {
       if (veil) veil.removeAttribute('data-visible');
+      if (veilTail) veilTail.removeAttribute('data-visible');
     }
 
     /** Nearest ancestor whose overflow clips the scrolling transcript. */
@@ -1243,16 +1263,15 @@
 
       var clip = findClipAncestor(seat);
       var clipRect = clip ? clip.getBoundingClientRect() : seatRect;
-      var bottom = seatRect.bottom;
-      var gap = clipRect.bottom - seatRect.bottom;
-      // Absorb sub-pixel / few-pixel rounding gaps, but never reach over a real
-      // element that sits below the seat.
-      if (gap > 0 && gap <= 12) bottom = clipRect.bottom;
-      bottom = Math.min(window.innerHeight, Math.ceil(bottom));
-
       var width = seat.clientWidth || seatRect.width;
       width = Math.min(width, Math.max(1, window.innerWidth - (seatRect.left + seat.clientLeft)));
-      var height = bottom - cardRect.top;
+
+      // Main veil: the full seat width, ending exactly at the seat's bottom edge.
+      // Never extend it past the seat: an absolutely positioned child that
+      // overflows a scroll container can add scrollable overflow and make the
+      // sticky composer wobble while scrolling to the bottom.
+      var mainBottom = Math.min(seatRect.bottom, window.innerHeight);
+      var height = mainBottom - cardRect.top;
       if (width <= 0 || height <= 0) { hideVeil(); return; }
       createVeil(seat);
       if (!veilCtx) return;
@@ -1277,6 +1296,33 @@
         veil.height = backingHeight;
       }
       veil.setAttribute('data-visible', 'true');
+
+      // Tail: cover the sub-pixel / few-pixel rounding gap between the seat bottom
+      // and the scrolling transcript's clip edge with a *fixed* strip. Fixed
+      // elements do not contribute to scrollable overflow, so the composer keeps
+      // its scroll geometry identical to the pre-plugin state.
+      var tailTop = mainBottom;
+      var tailGap = Math.min(clipRect.bottom, window.innerHeight) - mainBottom;
+      var tailVisible = tailGap > 0.01 && tailGap <= 12;
+      if (tailVisible && veilTailCtx) {
+        veilTailSampleLeft = seatRect.left + seat.clientLeft;
+        veilTailSampleTop = tailTop;
+        veilTailWidth = width;
+        veilTailHeight = tailGap;
+        var tailBackingWidth = Math.max(1, Math.round(width * dpr));
+        var tailBackingHeight = Math.max(1, Math.round(tailGap * dpr));
+        veilTail.style.left = veilTailSampleLeft + 'px';
+        veilTail.style.top = tailTop + 'px';
+        veilTail.style.width = width + 'px';
+        veilTail.style.height = tailGap + 'px';
+        if (veilTail.width !== tailBackingWidth || veilTail.height !== tailBackingHeight) {
+          veilTail.width = tailBackingWidth;
+          veilTail.height = tailBackingHeight;
+        }
+        veilTail.setAttribute('data-visible', 'true');
+      } else if (veilTail) {
+        veilTail.removeAttribute('data-visible');
+      }
     }
 
     function drawVeil() {
@@ -1296,6 +1342,24 @@
       } catch (err) { /* a lost drawing buffer must not break the animation */ }
     }
 
+    function drawVeilTail() {
+      if (!veilTail || !veilTailCtx || !field || !field.ready) return;
+      if (!veilTail.hasAttribute('data-visible')) return;
+      var source = field.canvas || canvas;
+      if (!source || !source.width || !source.height) return;
+      var scaleX = source.width / Math.max(1, window.innerWidth);
+      var scaleY = source.height / Math.max(1, window.innerHeight);
+      try {
+        veilTailCtx.clearRect(0, 0, veilTail.width, veilTail.height);
+        veilTailCtx.drawImage(
+          source,
+          veilTailSampleLeft * scaleX, veilTailSampleTop * scaleY,
+          veilTailWidth * scaleX, veilTailHeight * scaleY,
+          0, 0, veilTail.width, veilTail.height
+        );
+      } catch (err) { /* a lost drawing buffer must not break the animation */ }
+    }
+
     function loop(now) {
       if (!active) return;
       frameId = window.requestAnimationFrame(loop);
@@ -1304,6 +1368,7 @@
       lastTime = now;
       field.frame(dt);
       drawVeil();
+      drawVeilTail();
     }
 
     function mark(element) {
@@ -1507,11 +1572,15 @@
       }
       faded = [];
       if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
+      if (veilTail && veilTail.parentNode) veilTail.parentNode.removeChild(veilTail);
       releaseVeilHost();
       veil = null;
       veilCtx = null;
+      veilTail = null;
+      veilTailCtx = null;
       veilLeft = veilTop = veilWidth = veilHeight = 0;
       veilSampleLeft = veilSampleTop = 0;
+      veilTailSampleLeft = veilTailSampleTop = veilTailWidth = veilTailHeight = 0;
       if (field && typeof field.dispose === 'function') field.dispose();
       field = null;
       if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);

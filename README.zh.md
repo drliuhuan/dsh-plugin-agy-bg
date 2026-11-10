@@ -59,7 +59,7 @@ web profile 的 HMR 会监听 profile manifest，重组合后刷新页面即可�
 - **参数**：与官网 Hero 相同（`density 230`、`ringWidth 0.006`、`ringWidth2 0.107`、`ringDisplacement 0.62`、`particlesScale 0.59`；配色 `#2c64ed / #f84242 / #ffcf03`）。深色使用官网底部 CTA 的配色与参数。
 - **跟随逻辑**：光标映射到 z=0 平面后乘 `0.175` 得到粒子空间环心，环心每帧按 0.02 缓动跟随；环半径按 `0.175 + sin(t)·0.03 + cos(3t)·0.02` 呼吸。
 - **透明化策略**：只给「整页高度」+「主题基色背景」的容器打 `data-dsh-antigravity-surface="transparent"`（shell frame 与中间内容大表面），所以不会把输入框、代码块、卡片一起变透明；每 2s 重扫一次以适配客户端路由切换。
-- **输入框渐变与状态栏遮挡**：DSH 会在输入框上方叠一条约 36px 的 `composerSeat` 渐隐层（从透明渐到页面底色）。插件开启时会同时移除这条渐变，让粒子一直铺到输入框边缘；同时在输入卡片的同宽位置放一块跟随渲染的遮挡画布（`#dsh-antigravity-veil`），把卡片下方/背后滚动经过的正文盖住，露出的仍是同一片实时粒子背景。关闭插件时两者一起恢复。
+- **输入框渐变与状态栏遮挡**：DSH 会在输入框上方叠一条约 36px 的 `composerSeat` 渐隐层；插件开启时会移除这条渐变。粒子场的 canvas 副本（`#dsh-antigravity-veil`）覆盖整个 composer seat 的宽度（不只是输入卡片），从卡片顶部一直到 seat 底部，侧边不再漏出滚动文字；seat 底部与滚动容器之间的亚像素/几像素缝隙由一条 `position: fixed` 的细条（`#dsh-antigravity-veil-tail`）补上，它不参与滚动溢出，不会影响 sticky 输入框的滚动布局。关闭插件时两项都恢复。
 - **开关**：注册在 `settings.general.item` 的 React 行，文案走插件的 locale 命名空间（en / zh）。
 
 ## 开发
