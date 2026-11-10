@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-agy-bg",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DeepSeek Harness Web UI plugin: a mouse-following WebGL particle background recreated from antigravity.google, with a Settings toggle and light/dark palettes.",
   "type": "module",
   "license": "MIT",
