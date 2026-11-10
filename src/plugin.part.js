@@ -157,8 +157,10 @@
     '[data-dsh-antigravity-fade="off"]::before,[data-dsh-antigravity-fade="off"]::after{',
     'background-image:none !important}',
     // The veiled copy of the particle field that covers the transcript under
-    // the composer/status bar (see syncVeilGeometry).
-    '#dsh-antigravity-veil{position:fixed;display:block;pointer-events:none;z-index:8;opacity:0}',
+    // the composer/status bar (see syncVeilGeometry). It is mounted inside the
+    // composer seat and kept at z-index -1, so the seat's own stacking context
+    // decides the outcome: behind the input card, in front of the transcript.
+    '#dsh-antigravity-veil{position:absolute;display:block;pointer-events:none;z-index:-1;opacity:0}',
     '#dsh-antigravity-veil[data-visible="true"]{opacity:1}'
   ].join('');
 
@@ -194,17 +196,27 @@
     var themeObserver = null;
     var active = false;
 
-    /* ---------------- status-bar veil ----------------
+    /* ---------------- composer veil ----------------
        The sticky composer seat used to hide the transcript scrolling underneath
        with a gradient painted in the page colour. The plugin removes that
        gradient so the particle field reaches the composer edge, which lets the
        last few pixels below the input card show scrolled text over the canvas.
-       The veil is a fixed canvas, exactly as wide as the composer card, that
+       The veil is a canvas, exactly as wide as the composer card, that
        re-paints the particle field over that band every frame: the text is
        covered and the background stays identical, because the veil is a copy of
-       the very pixels that would otherwise be visible there. */
+       the very pixels that would otherwise be visible there.
+       It lives inside [data-composer-seat] on purpose. A page-level fixed layer
+       is compared with the whole shell, so its z-index is decided by whatever
+       the desktop build does above the composer; that is how the card ended up
+       buried under the canvas. As a negative-z-index child of the seat, the
+       veil instead paints above the seat background and below the card, and the
+       seat's own stacking context keeps the transcript behind the whole group. */
     var veil = null;
     var veilCtx = null;
+    var veilHost = null;
+    var veilHostOriginalPosition = null;
+    var veilSampleLeft = 0;
+    var veilSampleTop = 0;
     var veilLeft = 0;
     var veilTop = 0;
     var veilWidth = 0;
@@ -230,13 +242,35 @@
       return best;
     }
 
-    function createVeil() {
-      if (veil) return;
-      veil = document.createElement('canvas');
-      veil.id = 'dsh-antigravity-veil';
-      veil.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(veil);
-      veilCtx = veil.getContext('2d');
+    /** Undo the inline positioning we imposed on the previous seat, if any. */
+    function releaseVeilHost() {
+      if (veilHost && veilHostOriginalPosition !== null) {
+        try { veilHost.style.position = veilHostOriginalPosition; } catch (err) { /* detached */ }
+      }
+      veilHost = null;
+      veilHostOriginalPosition = null;
+    }
+
+    /**
+     * Mount the veil in the seat that currently owns the composer. Sessions can
+     * replace that seat, so the canvas follows it instead of assuming one node.
+     */
+    function createVeil(seat) {
+      if (!veil) {
+        veil = document.createElement('canvas');
+        veil.id = 'dsh-antigravity-veil';
+        veil.setAttribute('aria-hidden', 'true');
+        veilCtx = veil.getContext('2d');
+      }
+      if (veilHost === seat && veil.parentNode === seat) return;
+      if (veil.parentNode) veil.parentNode.removeChild(veil);
+      releaseVeilHost();
+      if (window.getComputedStyle(seat).position === 'static') {
+        veilHostOriginalPosition = seat.style.position;
+        seat.style.position = 'relative';
+      }
+      seat.appendChild(veil);
+      veilHost = seat;
     }
 
     function hideVeil() {
@@ -259,13 +293,17 @@
       var width = cardRect.width;
       var height = bottom - cardRect.top;
       if (width <= 0 || height <= 0) { hideVeil(); return; }
-      if (!veil) createVeil();
+      createVeil(seat);
       if (!veilCtx) return;
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var backingWidth = Math.max(1, Math.round(width * dpr));
       var backingHeight = Math.max(1, Math.round(height * dpr));
-      veilLeft = cardRect.left;
-      veilTop = cardRect.top;
+      // Sample the live field in viewport coordinates, then place the copy in
+      // the seat's padding box — that is what absolute offsets measure from.
+      veilSampleLeft = cardRect.left;
+      veilSampleTop = cardRect.top;
+      veilLeft = cardRect.left - seatRect.left - seat.clientLeft;
+      veilTop = cardRect.top - seatRect.top - seat.clientTop;
       veilWidth = width;
       veilHeight = height;
       veil.style.left = veilLeft + 'px';
@@ -289,7 +327,8 @@
         veilCtx.clearRect(0, 0, veil.width, veil.height);
         veilCtx.drawImage(
           source,
-          veilLeft * scaleX, veilTop * scaleY, veilWidth * scaleX, veilHeight * scaleY,
+          veilSampleLeft * scaleX, veilSampleTop * scaleY,
+          veilWidth * scaleX, veilHeight * scaleY,
           0, 0, veil.width, veil.height
         );
       } catch (err) { /* a lost drawing buffer must not break the animation */ }
@@ -506,9 +545,11 @@
       }
       faded = [];
       if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
+      releaseVeilHost();
       veil = null;
       veilCtx = null;
       veilLeft = veilTop = veilWidth = veilHeight = 0;
+      veilSampleLeft = veilSampleTop = 0;
       if (field && typeof field.dispose === 'function') field.dispose();
       field = null;
       if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
