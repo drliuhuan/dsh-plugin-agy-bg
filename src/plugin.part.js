@@ -277,10 +277,29 @@
       if (veil) veil.removeAttribute('data-visible');
     }
 
+    /** Nearest ancestor whose overflow clips the scrolling transcript. */
+    function findClipAncestor(seat) {
+      var node = seat.parentElement;
+      while (node && node !== document.body) {
+        var style = window.getComputedStyle(node);
+        if (style.overflow !== 'visible' || style.overflowY !== 'visible') return node;
+        node = node.parentElement;
+      }
+      return null;
+    }
+
     /**
      * Cover the seat band below/behind the composer card with a copy of the
-     * particle field. Only the card's own width is veiled, so the workspace on
-     * both sides keeps showing the live canvas untouched.
+     * particle field.
+     *
+     * The veil spans the full width of the composer seat, not just the input
+     * card: the layout leaves a few-pixel gutter on both sides of the card
+     * below the status bar, and the transcript scrolling underneath is visible
+     * there. It also reaches the scroll container's bottom edge (and rounds up
+     * to the next CSS pixel) so a fractional seat bottom — common in the web
+     * build at 125%/150% display scaling — cannot leave a one-pixel line of
+     * transcript below the status bar. The canvas copy is pixel-identical to
+     * the live field, so widening it is invisible apart from hiding the text.
      */
     function syncVeilGeometry() {
       if (!active || !field || !field.ready) return;
@@ -289,20 +308,31 @@
       if (!card || !seat) { hideVeil(); return; }
       var cardRect = card.getBoundingClientRect();
       var seatRect = seat.getBoundingClientRect();
-      var bottom = Math.min(seatRect.bottom, window.innerHeight);
-      var width = cardRect.width;
+
+      var clip = findClipAncestor(seat);
+      var clipRect = clip ? clip.getBoundingClientRect() : seatRect;
+      var bottom = seatRect.bottom;
+      var gap = clipRect.bottom - seatRect.bottom;
+      // Absorb sub-pixel / few-pixel rounding gaps, but never reach over a real
+      // element that sits below the seat.
+      if (gap > 0 && gap <= 12) bottom = clipRect.bottom;
+      bottom = Math.min(window.innerHeight, Math.ceil(bottom));
+
+      var width = seat.clientWidth || seatRect.width;
+      width = Math.min(width, Math.max(1, window.innerWidth - (seatRect.left + seat.clientLeft)));
       var height = bottom - cardRect.top;
       if (width <= 0 || height <= 0) { hideVeil(); return; }
       createVeil(seat);
       if (!veilCtx) return;
+
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var backingWidth = Math.max(1, Math.round(width * dpr));
       var backingHeight = Math.max(1, Math.round(height * dpr));
       // Sample the live field in viewport coordinates, then place the copy in
       // the seat's padding box — that is what absolute offsets measure from.
-      veilSampleLeft = cardRect.left;
+      veilSampleLeft = seatRect.left + seat.clientLeft;
       veilSampleTop = cardRect.top;
-      veilLeft = cardRect.left - seatRect.left - seat.clientLeft;
+      veilLeft = 0;
       veilTop = cardRect.top - seatRect.top - seat.clientTop;
       veilWidth = width;
       veilHeight = height;
