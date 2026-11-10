@@ -51,7 +51,7 @@ web profile 的 HMR 会监听 profile manifest，重组合后刷新页面即可�
 
 - 打开 **Settings → General**，找到「Antigravity 粒子背景」一行，用右侧开关即时开/关；偏好按浏览器保存在 `localStorage` 的 `dsh-plugin-agy-bg:v1`。
 - 浏览器不支持 WebGL2 / 浮点渲染目标时，插件会安静地保持原界面（不会做透明化处理）。
-- 系统开启「减少动态效果」时自动把粒子密度降到 ≤110 并隔帧模拟，和官网行为一致。
+- 系统开启「减少动态效果」时自动把粒子密度降到 ≤110，动画按所选帧率运行。
 
 ## 实现要点
 
@@ -59,7 +59,7 @@ web profile 的 HMR 会监听 profile manifest，重组合后刷新页面即可�
 - **参数**：与官网 Hero 相同（`density 230`、`ringWidth 0.006`、`ringWidth2 0.107`、`ringDisplacement 0.62`、`particlesScale 0.59`；配色 `#2c64ed / #f84242 / #ffcf03`）。深色使用官网底部 CTA 的配色与参数。
 - **跟随逻辑**：光标映射到 z=0 平面后乘 `0.175` 得到粒子空间环心，环心每帧按 0.02 缓动跟随；环半径按 `0.175 + sin(t)·0.03 + cos(3t)·0.02` 呼吸。
 - **透明化策略**：只给「整页高度」+「主题基色背景」的容器打 `data-dsh-antigravity-surface="transparent"`（shell frame 与中间内容大表面），所以不会把输入框、代码块、卡片一起变透明；每 2s 重扫一次以适配客户端路由切换。
-- **输入框渐变与状态栏遮挡**：DSH 会在输入框上方叠一条约 36px 的 `composerSeat` 渐隐层；插件开启时会移除这条渐变。粒子场的 canvas 副本（`#dsh-antigravity-veil`）覆盖整个 composer seat 的宽度（不只是输入卡片），从卡片顶部一直到 seat 底部，侧边不再漏出滚动文字；seat 底部与滚动容器之间的亚像素/几像素缝隙由一条 `position: fixed` 的细条（`#dsh-antigravity-veil-tail`）补上，它不参与滚动溢出，不会影响 sticky 输入框的滚动布局。关闭插件时两项都恢复。
+- **输入框**：保留宿主原生背景和渐变，不再向输入框或聊天滚动容器插入遮罩画布，避免影响输入框滚动布局。
 - **开关**：注册在 `settings.general.item` 的 React 行，文案走插件的 locale 命名空间（en / zh）。
 
 ## 开发
@@ -87,3 +87,12 @@ npm run check      # node --check client.js && node --check index.js
 非官方交互复刻，与 Google 无关；`antigravity.google` 的视觉参数来自其公开页面。MIT License。
 
 [English README](README.md)
+
+
+## 帧率与性能
+
+设置 → 通用中可选择节能模式（30 FPS）、普通模式（60 FPS，默认）和高性能模式（120 FPS），选择会保存在当前浏览器中。前台采样 90 个 `requestAnimationFrame` 间隔，中位数不超过 9.5ms 时显示高性能模式，约对应 120Hz 或更高刷新率。背景启动、打开设置项以及已启用的页面重新回到前台时会采样。这判断的是浏览器回调频率，与屏幕分辨率无关；系统节能和浏览器限频可能导致选项不显示，实际 FPS 也取决于 GPU 负载。已保存的 120 FPS 选择在检测通过前按 60 FPS 运行。
+
+模拟仅计算有效粒子所在的纹理行。关闭背景会释放 GPU 资源、观察器和鼠标监听。动画计时和缓动按实际经过时间更新。页面结构发生变化后才重新扫描背景表面。
+
+运行 `npm test` 可验证旧设置兼容、高刷检测、帧率调度、输入框隔离和资源释放。

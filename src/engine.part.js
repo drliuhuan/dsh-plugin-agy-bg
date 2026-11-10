@@ -108,13 +108,6 @@
     pointer.y = e.clientY;
     pointer.hasMoved = true;
   };
-  if (finePointerQuery.matches) {
-    window.addEventListener('mousemove', onPointerMove, { passive: true });
-  } else {
-    window.addEventListener('pointerdown', (e) => {
-      if (e.pointerType !== 'mouse') onPointerMove(e);
-    }, { passive: true, capture: true });
-  }
 
   /* ==========================================================
      Ashima Arts / Stefan Gustavson simplex noise（原站内联的实现）
@@ -197,14 +190,16 @@
 
       // scale 缓动
       float scaleDiff = t - scale;
-      scaleDiff *= 0.2;
+      scaleDiff *= 1.0 - pow(0.8, uDeltaTime * 60.0);
       scale += scaleDiff;
 
       // 最终位置：参考位置 + 噪声位移 + 惯性
       vec2 finalPos = curentPos + disp + (pos * 0.25);
+      // The 60 Hz position recurrence retains 0.2 of the previous position.
+      finalPos = mix(pFrame.xy, finalPos, (1.0 - pow(0.2, uDeltaTime * 60.0)) / 0.8);
 
-      velocity *= 0.5;
-      velocity += scale * 0.25;
+      float decay = pow(0.5, uDeltaTime * 60.0);
+      velocity = velocity * decay + scale * 0.5 * (1.0 - decay);
 
       outColor = vec4(finalPos, scale, velocity);
     }`;
@@ -335,7 +330,6 @@
       this.everRendered = false;
       this.pointerInside = false;
       this.offscreen = false;
-      this.frameSkip = false;
       this.intersection = [0, 0];
       this.ringPos = new Float32Array([0, 0]);
       this.cursorPos = new Float32Array([0, 0]);
@@ -382,15 +376,24 @@
     program(vertSource, fragSource) {
       const gl = this.gl;
       const program = gl.createProgram();
-      const vs = this.compile(gl.VERTEX_SHADER, vertSource);
-      const fs = this.compile(gl.FRAGMENT_SHADER, fragSource);
+      let vs, fs;
+      try {
+        vs = this.compile(gl.VERTEX_SHADER, vertSource);
+        fs = this.compile(gl.FRAGMENT_SHADER, fragSource);
+      } catch (error) {
+        if (vs) gl.deleteShader(vs);
+        gl.deleteProgram(program);
+        throw error;
+      }
       gl.attachShader(program, vs);
       gl.attachShader(program, fs);
       gl.linkProgram(program);
       gl.deleteShader(vs);
       gl.deleteShader(fs);
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        throw new Error('Program link error: ' + gl.getProgramInfoLog(program));
+        const log = gl.getProgramInfoLog(program);
+        gl.deleteProgram(program);
+        throw new Error('Program link error: ' + log);
       }
       return program;
     }
@@ -496,6 +499,7 @@
       const framebuffer = gl.createFramebuffer();
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      this.targets[index] = { texture, framebuffer };
       const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
       if (status !== gl.FRAMEBUFFER_COMPLETE) {
         throw new Error('Simulation framebuffer incomplete: 0x' + status.toString(16));
@@ -546,8 +550,8 @@
         this.resizeObserver = new ResizeObserver(() => this.resize());
         this.resizeObserver.observe(this.canvas);
       }
-      this.onResize = () => this.resize();
-      window.addEventListener('resize', this.onResize, { passive: true });
+      this.pointerEvent = finePointerQuery.matches ? 'mousemove' : 'pointerdown';
+      window.addEventListener(this.pointerEvent, onPointerMove, { passive: true });
     }
 
     /* ---------------- 尺寸 / 布局 ---------------- */
@@ -557,6 +561,7 @@
       const rect = this.canvas.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
+      this.rect = rect;
       this.dpr = Math.min(window.devicePixelRatio || 1, 2);
       const width = Math.max(1, Math.round(rect.width * this.dpr));
       const height = Math.max(1, Math.round(rect.height * this.dpr));
@@ -577,7 +582,8 @@
     /* ---------------- 每帧更新 ---------------- */
     updatePointer() {
       if (!this.interactive) { this.pointerInside = false; return; }
-      const rect = this.canvas.getBoundingClientRect();
+      const rect = this.rect;
+      if (!rect) return;
       const p = pointer;
       const inside = p.hasMoved &&
         p.x >= rect.left && p.x <= rect.right &&
@@ -595,7 +601,7 @@
       this.intersection[1] = ndcY * halfH;
     }
 
-    updateTarget() {
+    updateTarget(dt) {
       const t = this.time;
       // 空闲漂移（两个不同频率/相位的值噪声）
       const nx = (this.noiseX.getVal(t * 0.66 + 94.234) - 0.5) * 2;
@@ -606,13 +612,13 @@
       if (this.pointerInside) {
         cursor[0] = this.intersection[0] * 0.175 + nx * 0.1;
         cursor[1] = this.intersection[1] * 0.175 + ny * 0.1;
-        ring[0] += (cursor[0] - ring[0]) * 0.02;
-        ring[1] += (cursor[1] - ring[1]) * 0.02;
+        ring[0] += (cursor[0] - ring[0]) * (1 - Math.pow(0.98, dt * 60));
+        ring[1] += (cursor[1] - ring[1]) * (1 - Math.pow(0.98, dt * 60));
       } else {
         cursor[0] = nx * 0.2;
         cursor[1] = ny * 0.1;
-        ring[0] += (cursor[0] - ring[0]) * 0.01;
-        ring[1] += (cursor[1] - ring[1]) * 0.01;
+        ring[0] += (cursor[0] - ring[0]) * (1 - Math.pow(0.99, dt * 60));
+        ring[1] += (cursor[1] - ring[1]) * (1 - Math.pow(0.99, dt * 60));
       }
 
       return 0.175 + Math.sin(t) * 0.03 + Math.cos(t * 3) * 0.02;
@@ -644,8 +650,11 @@
       gl.uniform1f(u.uRingWidth2, this.opts.ringWidth2);
       gl.uniform1f(u.uRingDisplacement, this.opts.ringDisplacement);
 
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(0, 0, SIM_SIZE, Math.ceil(this.count / SIM_SIZE));
       gl.bindVertexArray(null);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.disable(gl.SCISSOR_TEST);
     }
 
     draw() {
@@ -688,19 +697,35 @@
     }
 
     frame(dt) {
-      if (!this.ready || this.offscreen) return;
-
-      // 移动端 / 低性能模式隔帧更新（与原站一致）
-      if ((this.isMobile || this.reduced) && this.everRendered) {
-        this.frameSkip = !this.frameSkip;
-        if (this.frameSkip) return;
-      }
+      if (!this.ready || this.offscreen) return false;
 
       this.time += dt;
       this.updatePointer();
-      const ringRadius = this.updateTarget();
+      const ringRadius = this.updateTarget(dt);
       this.simulate(dt, ringRadius);
       this.draw();
+      return true;
+    }
+
+    dispose() {
+      this.ready = false;
+      this.visibilityObserver?.disconnect();
+      this.resizeObserver?.disconnect();
+      if (this.pointerEvent) window.removeEventListener(this.pointerEvent, onPointerMove);
+      const gl = this.gl;
+      if (!gl) return;
+      for (const target of this.targets || []) {
+        if (!target) continue;
+        gl.deleteTexture(target.texture);
+        gl.deleteFramebuffer(target.framebuffer);
+      }
+      if (this.posTex) gl.deleteTexture(this.posTex);
+      if (this.uvBuffer) gl.deleteBuffer(this.uvBuffer);
+      if (this.vao) gl.deleteVertexArray(this.vao);
+      if (this.simProgram) gl.deleteProgram(this.simProgram);
+      if (this.renderProgram) gl.deleteProgram(this.renderProgram);
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+      this.gl = null;
     }
 
     setDensity(value) {

@@ -50,7 +50,7 @@ Uninstall by removing the dependency and the bundle entry (or use the Plugins pa
 ## Usage
 
 - **Settings → General → “Antigravity particle background”** toggles the background instantly. The preference is stored in `localStorage` under `dsh-plugin-agy-bg:v1`.
-- With `prefers-reduced-motion: reduce`, the plugin caps density at 110 and simulates every other frame, matching the original site's behavior.
+- With `prefers-reduced-motion: reduce`, the plugin caps density at 110. The selected frame-rate limit controls animation cadence.
 - If WebGL2 or float render targets are unavailable, nothing is changed visually.
 
 ## How it works
@@ -58,8 +58,8 @@ Uninstall by removing the dependency and the bundle entry (or use the Plugins pa
 - **Particle simulation** — a 256×256 `RGBA32F` texture pair is ping-ponged every frame; the fragment shader updates each particle's position, scale and velocity, and point sprites read the simulation texture when drawing.
 - **Parameters** — the same values as the antigravity.google hero: `density 230`, `ringWidth 0.006`, `ringWidth2 0.107`, `ringDisplacement 0.62`, `particlesScale 0.59`, colors `#2c64ed / #f84242 / #ffcf03`. Dark theme uses the palette/parameters of the site's footer CTA.
 - **Cursor mapping** — the pointer is mapped onto the z=0 plane and multiplied by `0.175` to get the ring center; the ring eases toward it at 0.02/frame and its radius breathes with `0.175 + sin(t)·0.03 + cos(3t)·0.02`.
-- **Transparency strategy** — only containers that cover the full page height and use the theme base color are tagged `data-dsh-antigravity-surface="transparent"` (the shell frame plus the large center surfaces). The composer, code blocks, cards and dialogs keep their own fills. The scan repeats every 2 s so client-side navigation is handled.
-- **Composer fade & status-bar veil** — DSH paints a ~36 px `composerSeat` gradient above the composer; while the plugin is active that gradient is removed so particles reach the input edge. A canvas copy of the particle field (`#dsh-antigravity-veil`) spans the full composer seat from the card top to the seat bottom, so transcript text cannot peek through the gutters beside the input. A fixed strip (`#dsh-antigravity-veil-tail`) covers the sub-pixel / few-pixel rounding gap down to the scroll container edge without contributing to scrollable overflow — the sticky composer keeps the exact pre-plugin scroll geometry. Turning the plugin off restores the original gradient.
+- **Transparency strategy** — only containers that cover the full page height and use the theme base color are tagged `data-dsh-antigravity-surface="transparent"` (the shell frame plus the large center surfaces). The composer, code blocks, cards and dialogs keep their own fills. A structural-change observer marks surfaces dirty; the 2-second check rescans only after changes.
+- **Composer** — the native composer background and fade remain unchanged. The plugin inserts no overlay canvases into the composer or transcript scroll tree, preserving native scrolling.
 - **Switch** — a React row registered into `settings.general.item`, with English/Chinese copy registered through the plugin locale namespace.
 
 ## Development
@@ -87,3 +87,12 @@ Editing `client.js` (or rebuilding it from `src/`) hot-swaps the plugin in an op
 MIT. This is an unofficial interaction recreation, not affiliated with Google; the visual parameters were observed from the public antigravity.google page.
 
 [中文说明](README.zh.md)
+
+
+## Frame rate and performance
+
+Settings → General offers Power saving (30 FPS), Normal (60 FPS, default), and High performance (120 FPS). The choice is remembered in this browser. The 120 FPS option appears when 90 foreground `requestAnimationFrame` intervals have a median of at most 9.5 ms (approximately 120 Hz or faster). Sampling runs when the background starts, the settings row mounts, or the active page becomes visible again. This estimates browser presentation cadence, not resolution; browser throttling or system power saving can hide the option. Actual FPS also depends on GPU load. A saved 120 FPS choice falls back to 60 until high refresh is detected.
+
+Simulation is restricted to occupied texture rows. Disabling the background releases GPU resources, observers, and pointer listeners. Frame timing and easing use elapsed time rather than assuming a 60 Hz screen.
+
+Run `npm test` for preference migration, refresh detection, frame pacing, composer isolation, and resource cleanup regression checks.

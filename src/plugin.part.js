@@ -17,7 +17,6 @@
   var STORAGE_KEY = 'dsh-plugin-agy-bg:v1';
   var LOCALE_NS = 'antigravity-bg';
   var SURFACE_ATTR = 'data-dsh-antigravity-surface';
-  var FADE_ATTR = 'data-dsh-antigravity-fade';
   var CANVAS_ID = 'dsh-antigravity-canvas';
   var STYLE_ID = 'dsh-antigravity-style';
 
@@ -31,6 +30,10 @@
   var EN = {
     title: 'Antigravity particle background',
     description: 'A mouse-following WebGL particle field behind the interface, recreated from antigravity.google. The ring follows your cursor; turn it off here for a plain background.',
+    fps: 'Frame rate',
+    high: 'High performance (120 FPS)',
+    normal: 'Normal (60 FPS)',
+    eco: 'Power saving (30 FPS)',
     on: 'Particle background on',
     off: 'Particle background off',
     switchOn: 'Turn particle background off',
@@ -40,6 +43,10 @@
   var ZH = {
     title: 'Antigravity 粒子背景',
     description: '在界面背后铺一层跟随鼠标的 WebGL 粒子场，复刻自 antigravity.google。粒子环会跟着光标走；不想要时在这里关掉，恢复纯色背景。',
+    fps: '帧率',
+    high: '高性能模式（120 FPS）',
+    normal: '普通模式（60 FPS）',
+    eco: '节能模式（30 FPS）',
     on: '粒子背景已开启',
     off: '粒子背景已关闭',
     switchOn: '关闭粒子背景',
@@ -51,11 +58,11 @@
   function readPreference() {
     try {
       var raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return { enabled: true };
+      if (!raw) return { enabled: true, fps: 60 };
       var parsed = JSON.parse(raw);
-      return { enabled: parsed.enabled !== false };
+      return { enabled: parsed.enabled !== false, fps: [30, 60, 120].includes(parsed.fps) ? parsed.fps : 60 };
     } catch (err) {
-      return { enabled: true };
+      return { enabled: true, fps: 60 };
     }
   }
 
@@ -77,12 +84,26 @@
   function setPreferenceEnabled(value) {
     var next = value !== false;
     if (preference.enabled === next) return;
-    preference = { enabled: next };
+    preference = { ...preference, enabled: next };
     writePreference(preference);
     preferenceListeners.forEach(function (listener) {
       try { listener(); } catch (err) { /* keep other subscribers alive */ }
     });
     if (background) background.setEnabled(next);
+  }
+
+  var highRefresh = false;
+  function notifyPreference() {
+    preferenceListeners.forEach(function (listener) { listener(); });
+  }
+  function setFps(value) {
+    if (![30, 60, 120].includes(value)) return;
+    preference = { ...preference, fps: value };
+    writePreference(preference);
+    notifyPreference();
+  }
+  function targetFps() {
+    return preference.fps === 120 && !highRefresh ? 60 : preference.fps;
   }
 
   function subscribePreference(listener) {
@@ -150,28 +171,15 @@
     // own background.
     '[data-dsh-antigravity-surface="transparent"]{background-color:transparent !important;',
     'background-image:none !important}',
-    // The shell paints a 36px gradient above the composer so scrolled content
-    // fades into the page background. With a particle field behind the page that
-    // gradient reads as a solid band, so the tag removes it.
-    '[data-dsh-antigravity-fade="off"]{background-image:none !important}',
-    '[data-dsh-antigravity-fade="off"]::before,[data-dsh-antigravity-fade="off"]::after{',
-    'background-image:none !important}',
-    // The veiled copy of the particle field that covers the transcript under
-    // the composer/status bar (see syncVeilGeometry). It is mounted inside the
-    // composer seat and kept at z-index -1, so the seat's own stacking context
-    // decides the outcome: behind the input card, in front of the transcript.
-    '#dsh-antigravity-veil{position:absolute;display:block;pointer-events:none;z-index:-1;opacity:0}',
-    '#dsh-antigravity-veil[data-visible="true"]{opacity:1}',
-    // A fixed strip for the sub-pixel band below the seat. Fixed descendants do
-    // not contribute to the scroll container's scrollable overflow, so unlike an
-    // absolutely positioned element it cannot make the sticky composer wobble.
-    '#dsh-antigravity-veil-tail{position:fixed;display:block;pointer-events:none;z-index:-1;opacity:0}',
-    '#dsh-antigravity-veil-tail[data-visible="true"]{opacity:1}'
+    // Keep the native composer fade. No overlay is inserted into the composer
+    // or transcript scroll tree: even fixed descendants can gain a containing
+    // block from transformed/contained Electron shell ancestors.
   ].join('');
 
   var ROW_CSS = [
     '.abg_row{display:flex;align-items:center;gap:8px;padding:16px 0;',
     'border-bottom:.5px solid var(--dsw-alias-border-l2)}',
+    '@media(max-width:600px){.abg_row{flex-wrap:wrap}.abg_text{flex-basis:100%}}',
     '.abg_text{display:flex;flex-direction:column;flex:1;gap:4px;min-width:0;padding-right:48px}',
     '.abg_title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}',
     '.abg_desc{color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px}',
@@ -192,251 +200,44 @@
     var canvas = null;
     var field = null;
     var marked = [];
-    var faded = [];
     var styleElement = null;
     var frameId = 0;
     var lastTime = 0;
+    var frameBudget = 0;
+    var lastRenderTime = 0;
+    var refreshSamples = [];
+    var refreshTime = 0;
     var scanTimer = 0;
     var scanDebounce = 0;
     var themeObserver = null;
     var active = false;
-
-    /* ---------------- composer veil ----------------
-       The sticky composer seat used to hide the transcript scrolling underneath
-       with a gradient painted in the page colour. The plugin removes that
-       gradient so the particle field reaches the composer edge, which lets the
-       last few pixels below the input card show scrolled text over the canvas.
-       The veil is a canvas, exactly as wide as the composer card, that
-       re-paints the particle field over that band every frame: the text is
-       covered and the background stays identical, because the veil is a copy of
-       the very pixels that would otherwise be visible there.
-       It lives inside [data-composer-seat] on purpose. A page-level fixed layer
-       is compared with the whole shell, so its z-index is decided by whatever
-       the desktop build does above the composer; that is how the card ended up
-       buried under the canvas. As a negative-z-index child of the seat, the
-       veil instead paints above the seat background and below the card, and the
-       seat's own stacking context keeps the transcript behind the whole group. */
-    var veil = null;
-    var veilCtx = null;
-    var veilTail = null;
-    var veilTailCtx = null;
-    var veilHost = null;
-    var veilHostOriginalPosition = null;
-    var veilSampleLeft = 0;
-    var veilSampleTop = 0;
-    var veilLeft = 0;
-    var veilTop = 0;
-    var veilWidth = 0;
-    var veilHeight = 0;
-    var veilTailSampleLeft = 0;
-    var veilTailSampleTop = 0;
-    var veilTailWidth = 0;
-    var veilTailHeight = 0;
-
-    /** The composer input card — [data-composer-card], or the largest card. */
-    function findComposerCard() {
-      var seat = document.querySelector('[data-composer-seat]');
-      if (!seat) return null;
-      var markedCard = seat.querySelector('[data-composer-card]');
-      if (markedCard) return markedCard;
-      var candidates = seat.querySelectorAll('[class*="_card"]');
-      var best = null;
-      var bestArea = 0;
-      for (var i = 0; i < candidates.length; i++) {
-        var rect = candidates[i].getBoundingClientRect();
-        var area = rect.width * rect.height;
-        if (area > bestArea) {
-          best = candidates[i];
-          bestArea = area;
-        }
-      }
-      return best;
-    }
-
-    /** Undo the inline positioning we imposed on the previous seat, if any. */
-    function releaseVeilHost() {
-      if (veilHost && veilHostOriginalPosition !== null) {
-        try { veilHost.style.position = veilHostOriginalPosition; } catch (err) { /* detached */ }
-      }
-      veilHost = null;
-      veilHostOriginalPosition = null;
-    }
-
-    /**
-     * Mount the veil in the seat that currently owns the composer. Sessions can
-     * replace that seat, so the canvas follows it instead of assuming one node.
-     */
-    function createVeil(seat) {
-      if (!veil) {
-        veil = document.createElement('canvas');
-        veil.id = 'dsh-antigravity-veil';
-        veil.setAttribute('aria-hidden', 'true');
-        veilCtx = veil.getContext('2d');
-      }
-      if (!veilTail) {
-        veilTail = document.createElement('canvas');
-        veilTail.id = 'dsh-antigravity-veil-tail';
-        veilTail.setAttribute('aria-hidden', 'true');
-        veilTailCtx = veilTail.getContext('2d');
-      }
-      if (veilHost === seat && veil.parentNode === seat) return;
-      if (veil.parentNode) veil.parentNode.removeChild(veil);
-      if (veilTail.parentNode) veilTail.parentNode.removeChild(veilTail);
-      releaseVeilHost();
-      if (window.getComputedStyle(seat).position === 'static') {
-        veilHostOriginalPosition = seat.style.position;
-        seat.style.position = 'relative';
-      }
-      seat.appendChild(veil);
-      seat.appendChild(veilTail);
-      veilHost = seat;
-    }
-
-    function hideVeil() {
-      if (veil) veil.removeAttribute('data-visible');
-      if (veilTail) veilTail.removeAttribute('data-visible');
-    }
-
-    /** Nearest ancestor whose overflow clips the scrolling transcript. */
-    function findClipAncestor(seat) {
-      var node = seat.parentElement;
-      while (node && node !== document.body) {
-        var style = window.getComputedStyle(node);
-        if (style.overflow !== 'visible' || style.overflowY !== 'visible') return node;
-        node = node.parentElement;
-      }
-      return null;
-    }
-
-    /**
-     * Cover the seat band below/behind the composer card with a copy of the
-     * particle field.
-     *
-     * The veil spans the full width of the composer seat, not just the input
-     * card: the layout leaves a few-pixel gutter on both sides of the card
-     * below the status bar, and the transcript scrolling underneath is visible
-     * there. It also reaches the scroll container's bottom edge (and rounds up
-     * to the next CSS pixel) so a fractional seat bottom — common in the web
-     * build at 125%/150% display scaling — cannot leave a one-pixel line of
-     * transcript below the status bar. The canvas copy is pixel-identical to
-     * the live field, so widening it is invisible apart from hiding the text.
-     */
-    function syncVeilGeometry() {
-      if (!active || !field || !field.ready) return;
-      var card = findComposerCard();
-      var seat = document.querySelector('[data-composer-seat]');
-      if (!card || !seat) { hideVeil(); return; }
-      var cardRect = card.getBoundingClientRect();
-      var seatRect = seat.getBoundingClientRect();
-
-      var clip = findClipAncestor(seat);
-      var clipRect = clip ? clip.getBoundingClientRect() : seatRect;
-      var width = seat.clientWidth || seatRect.width;
-      width = Math.min(width, Math.max(1, window.innerWidth - (seatRect.left + seat.clientLeft)));
-
-      // Main veil: the full seat width, ending exactly at the seat's bottom edge.
-      // Never extend it past the seat: an absolutely positioned child that
-      // overflows a scroll container can add scrollable overflow and make the
-      // sticky composer wobble while scrolling to the bottom.
-      var mainBottom = Math.min(seatRect.bottom, window.innerHeight);
-      var height = mainBottom - cardRect.top;
-      if (width <= 0 || height <= 0) { hideVeil(); return; }
-      createVeil(seat);
-      if (!veilCtx) return;
-
-      var dpr = Math.min(window.devicePixelRatio || 1, 2);
-      var backingWidth = Math.max(1, Math.round(width * dpr));
-      var backingHeight = Math.max(1, Math.round(height * dpr));
-      // Sample the live field in viewport coordinates, then place the copy in
-      // the seat's padding box — that is what absolute offsets measure from.
-      veilSampleLeft = seatRect.left + seat.clientLeft;
-      veilSampleTop = cardRect.top;
-      veilLeft = 0;
-      veilTop = cardRect.top - seatRect.top - seat.clientTop;
-      veilWidth = width;
-      veilHeight = height;
-      veil.style.left = veilLeft + 'px';
-      veil.style.top = veilTop + 'px';
-      veil.style.width = width + 'px';
-      veil.style.height = height + 'px';
-      if (veil.width !== backingWidth || veil.height !== backingHeight) {
-        veil.width = backingWidth;
-        veil.height = backingHeight;
-      }
-      veil.setAttribute('data-visible', 'true');
-
-      // Tail: cover the sub-pixel / few-pixel rounding gap between the seat bottom
-      // and the scrolling transcript's clip edge with a *fixed* strip. Fixed
-      // elements do not contribute to scrollable overflow, so the composer keeps
-      // its scroll geometry identical to the pre-plugin state.
-      var tailTop = mainBottom;
-      var tailGap = Math.min(clipRect.bottom, window.innerHeight) - mainBottom;
-      var tailVisible = tailGap > 0.01 && tailGap <= 12;
-      if (tailVisible && veilTailCtx) {
-        veilTailSampleLeft = seatRect.left + seat.clientLeft;
-        veilTailSampleTop = tailTop;
-        veilTailWidth = width;
-        veilTailHeight = tailGap;
-        var tailBackingWidth = Math.max(1, Math.round(width * dpr));
-        var tailBackingHeight = Math.max(1, Math.round(tailGap * dpr));
-        veilTail.style.left = veilTailSampleLeft + 'px';
-        veilTail.style.top = tailTop + 'px';
-        veilTail.style.width = width + 'px';
-        veilTail.style.height = tailGap + 'px';
-        if (veilTail.width !== tailBackingWidth || veilTail.height !== tailBackingHeight) {
-          veilTail.width = tailBackingWidth;
-          veilTail.height = tailBackingHeight;
-        }
-        veilTail.setAttribute('data-visible', 'true');
-      } else if (veilTail) {
-        veilTail.removeAttribute('data-visible');
-      }
-    }
-
-    function drawVeil() {
-      if (!veil || !veilCtx || !field || !field.ready) return;
-      var source = field.canvas || canvas;
-      if (!source || !source.width || !source.height) return;
-      var scaleX = source.width / Math.max(1, window.innerWidth);
-      var scaleY = source.height / Math.max(1, window.innerHeight);
-      try {
-        veilCtx.clearRect(0, 0, veil.width, veil.height);
-        veilCtx.drawImage(
-          source,
-          veilSampleLeft * scaleX, veilSampleTop * scaleY,
-          veilWidth * scaleX, veilHeight * scaleY,
-          0, 0, veil.width, veil.height
-        );
-      } catch (err) { /* a lost drawing buffer must not break the animation */ }
-    }
-
-    function drawVeilTail() {
-      if (!veilTail || !veilTailCtx || !field || !field.ready) return;
-      if (!veilTail.hasAttribute('data-visible')) return;
-      var source = field.canvas || canvas;
-      if (!source || !source.width || !source.height) return;
-      var scaleX = source.width / Math.max(1, window.innerWidth);
-      var scaleY = source.height / Math.max(1, window.innerHeight);
-      try {
-        veilTailCtx.clearRect(0, 0, veilTail.width, veilTail.height);
-        veilTailCtx.drawImage(
-          source,
-          veilTailSampleLeft * scaleX, veilTailSampleTop * scaleY,
-          veilTailWidth * scaleX, veilTailHeight * scaleY,
-          0, 0, veilTail.width, veilTail.height
-        );
-      } catch (err) { /* a lost drawing buffer must not break the animation */ }
-    }
+    var baseColor = null;
+    var surfaceDirty = true;
+    var surfaceObserver = null;
 
     function loop(now) {
       if (!active) return;
       frameId = window.requestAnimationFrame(loop);
       if (!field || !field.ready || document.hidden) return;
-      var dt = Math.min(Math.max((now - lastTime) / 1000, 0), 0.1);
+      if (refreshTime && refreshSamples.length < 90) {
+        var interval = now - refreshTime;
+        if (interval > 0) refreshSamples.push(interval);
+        if (refreshSamples.length === 90) {
+          var sorted = refreshSamples.slice().sort(function (a, b) { return a - b; });
+          highRefresh = sorted[45] <= 9.5;
+          notifyPreference();
+        }
+      }
+      refreshTime = now;
+      var elapsed = Math.max(0, (now - lastTime) / 1000);
       lastTime = now;
+      frameBudget += elapsed;
+      var step = 1 / targetFps();
+      if (frameBudget + 0.0005 < step) return;
+      var dt = Math.min(Math.max(0, (now - lastRenderTime) / 1000), 0.1);
+      lastRenderTime = now;
+      frameBudget = Math.max(0, frameBudget - Math.max(1, Math.floor(frameBudget / step)) * step);
       field.frame(dt);
-      drawVeil();
-      drawVeilTail();
     }
 
     function mark(element) {
@@ -445,49 +246,16 @@
       marked.push(element);
     }
 
-    function markFade(element) {
-      if (!element || element.hasAttribute(FADE_ATTR)) return;
-      element.setAttribute(FADE_ATTR, 'off');
-      faded.push(element);
-    }
-
-    /**
-     * The composer sits on a `.composerSeat` layer that fades scrolled content
-     * into the page background with a short linear gradient. Tag that layer (and
-     * any gradient ancestor of the composer input) so the canvas stays visible
-     * right up to the input box.
-     */
-    function syncComposerFade() {
-      if (!active) return;
-      var center = document.querySelector('[class*="_centerCol"]');
-      if (!center) return;
-
-      var seats = center.querySelectorAll('[class*="_composerSeat"]');
-      for (var i = 0; i < seats.length; i++) markFade(seats[i]);
-
-      var input = center.querySelector('textarea, [contenteditable="true"], input[type="text"]');
-      var node = input;
-      var guard = 0;
-      while (node && node !== center && guard < 12) {
-        var self = window.getComputedStyle(node).backgroundImage;
-        var before = window.getComputedStyle(node, '::before').backgroundImage;
-        var after = window.getComputedStyle(node, '::after').backgroundImage;
-        if ((self && self !== 'none') || (before && before !== 'none') || (after && after !== 'none')) {
-          markFade(node);
-        }
-        node = node.parentElement;
-        guard++;
-      }
-    }
-
     /**
      * Tag the shell frame plus every large page surface in the center column
      * whose fill is exactly the theme base color. The size thresholds leave the
      * composer, cards, and side panels opaque.
      */
     function syncSurfaces() {
-      if (!active || !field || !field.ready) return;
-      var base = parseRgb(readBaseColor());
+      if (!active || !field || !field.ready || document.hidden) return;
+      marked = marked.filter(function (node) { return node.isConnected; });
+      if (!surfaceDirty) return;
+      var base = baseColor || (baseColor = parseRgb(readBaseColor()));
       mark(findShellFrame());
 
       var center = document.querySelector('[class*="_centerCol"]');
@@ -495,7 +263,7 @@
       var centerRect = center.getBoundingClientRect();
       if (centerRect.width <= 0 || centerRect.height <= 0) return;
 
-      syncComposerFade();
+      surfaceDirty = false;
 
       // On Windows the shell paints `--dsw-alias-bg-base` on the center column
       // itself (`[data-windows-titlebar] .mP3x-q_centerCol`). That element is a
@@ -509,6 +277,8 @@
       var nodes = center.querySelectorAll('*');
       for (var i = 0; i < nodes.length; i++) {
         var element = nodes[i];
+        // Composer surfaces and their descendants retain native fills/fades.
+        if (element.closest('[data-composer-seat]')) continue;
         if (element.hasAttribute(SURFACE_ATTR)) continue;
         var style = window.getComputedStyle(element);
         if (!sameRgb(parseRgb(style.backgroundColor), base)) continue;
@@ -518,10 +288,10 @@
         mark(element);
       }
 
-      syncVeilGeometry();
     }
 
     function scheduleScan() {
+      surfaceDirty = true;
       if (!active || scanDebounce) return;
       scanDebounce = window.setTimeout(function () {
         scanDebounce = 0;
@@ -538,15 +308,22 @@
     function onResize() {
       if (!field) return;
       field.resize();
+      refreshTime = 0;
+      refreshSamples = [];
       scheduleScan();
     }
 
     function onVisibilityChange() {
       lastTime = performance.now();
+      lastRenderTime = lastTime;
+      frameBudget = 0;
+      refreshTime = 0;
+      refreshSamples = [];
     }
 
     function onThemeMutation() {
       if (!active) return;
+      baseColor = null;
       syncPalette();
       scheduleScan();
     }
@@ -580,16 +357,21 @@
       }
 
       active = true;
+      surfaceDirty = true;
+      baseColor = null;
+      frameBudget = 0;
+      refreshTime = 0;
+      refreshSamples = [];
       syncSurfaces();
       syncPalette();
-      syncVeilGeometry();
 
       window.addEventListener('resize', onResize);
       window.addEventListener('click', scheduleScan, { passive: true });
-      document.addEventListener('input', scheduleScan, true);
       document.addEventListener('visibilitychange', onVisibilityChange);
 
       if (typeof MutationObserver === 'function') {
+        surfaceObserver = new MutationObserver(function () { surfaceDirty = true; });
+        surfaceObserver.observe(document.body, { childList: true, subtree: true });
         themeObserver = new MutationObserver(onThemeMutation);
         themeObserver.observe(document.body, {
           attributes: true,
@@ -598,11 +380,15 @@
       }
 
       // Page surfaces can be replaced by client-side navigation; a cheap scan
-      // every couple of seconds keeps the transparency tags on the right
-      // elements without observing every DOM mutation.
-      scanTimer = window.setInterval(syncSurfaces, 2000);
+      // every couple of seconds scans surfaces only after
+      // structural changes. Attribute changes made by this plugin are ignored.
+      scanTimer = window.setInterval(function () {
+        if (!surfaceObserver) surfaceDirty = true;
+        syncSurfaces();
+      }, 2000);
 
       lastTime = performance.now();
+      lastRenderTime = lastTime;
       frameId = window.requestAnimationFrame(loop);
       window.requestAnimationFrame(function () {
         if (canvas) canvas.setAttribute('data-visible', 'true');
@@ -625,8 +411,11 @@
       }
       window.removeEventListener('resize', onResize);
       window.removeEventListener('click', scheduleScan);
-      document.removeEventListener('input', scheduleScan, true);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (surfaceObserver) {
+        surfaceObserver.disconnect();
+        surfaceObserver = null;
+      }
       if (themeObserver) {
         themeObserver.disconnect();
         themeObserver = null;
@@ -635,20 +424,6 @@
         try { marked[i].removeAttribute(SURFACE_ATTR); } catch (err) { /* detached */ }
       }
       marked = [];
-      for (var j = 0; j < faded.length; j++) {
-        try { faded[j].removeAttribute(FADE_ATTR); } catch (err) { /* detached */ }
-      }
-      faded = [];
-      if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
-      if (veilTail && veilTail.parentNode) veilTail.parentNode.removeChild(veilTail);
-      releaseVeilHost();
-      veil = null;
-      veilCtx = null;
-      veilTail = null;
-      veilTailCtx = null;
-      veilLeft = veilTop = veilWidth = veilHeight = 0;
-      veilSampleLeft = veilSampleTop = 0;
-      veilTailSampleLeft = veilTailSampleTop = veilTailWidth = veilTailHeight = 0;
       if (field && typeof field.dispose === 'function') field.dispose();
       field = null;
       if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
@@ -678,10 +453,10 @@
   }
 
   function usePreference() {
-    var state = React.useState(getPreferenceEnabled());
+    var state = React.useState(preference);
     var setValue = state[1];
     React.useEffect(function () {
-      return subscribePreference(function () { setValue(getPreferenceEnabled()); });
+      return subscribePreference(function () { setValue({ ...preference }); });
     }, []);
     return state[0];
   }
@@ -696,8 +471,31 @@
 
   function AntigravityRow(props) {
     var translate = typeof props.t === 'function' ? props.t : fallbackTranslate;
-    var enabled = usePreference();
+    var settings = usePreference();
+    var enabled = settings.enabled;
     useLocaleTick();
+    React.useEffect(function () {
+      var id = 0, previous = 0, samples = [];
+      function probe(now) {
+        if (document.hidden) { previous = 0; samples = []; }
+        else {
+          if (previous) {
+            var delta = now - previous;
+            if (delta > 0) samples.push(delta);
+          }
+          previous = now;
+          if (samples.length === 90) {
+            samples.sort(function (a, b) { return a - b; });
+            highRefresh = samples[45] <= 9.5;
+            notifyPreference();
+            return;
+          }
+        }
+        id = window.requestAnimationFrame(probe);
+      }
+      id = window.requestAnimationFrame(probe);
+      return function () { window.cancelAnimationFrame(id); };
+    }, []);
 
     return React.createElement(
       React.Fragment,
@@ -720,6 +518,16 @@
             className: 'abg_desc',
             children: translate('description')
           })
+        ),
+        React.createElement('select', {
+          'aria-label': translate('fps'),
+          value: settings.fps === 120 && !highRefresh ? 60 : settings.fps,
+          onChange: function (event) { setFps(Number(event.target.value)); },
+          style: { maxWidth: '220px', color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-3)', borderRadius: '6px', padding: '6px' }
+        },
+          React.createElement('option', { value: 30 }, translate('eco')),
+          React.createElement('option', { value: 60 }, translate('normal')),
+          highRefresh ? React.createElement('option', { value: 120 }, translate('high')) : null
         ),
         React.createElement(
           'button',

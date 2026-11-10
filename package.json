@@ -31,6 +31,7 @@
   ],
   "scripts": {
     "build": "node build.mjs",
+    "test": "node --test --test-isolation=none tests/*.test.mjs",
     "check": "node --check client.js && node --check index.js"
   },
   "keywords": [
