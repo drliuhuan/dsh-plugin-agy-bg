@@ -27,7 +27,8 @@
     "README.md",
     "LICENSE",
     "docs",
-    "README.zh.md"
+    "README.zh.md",
+    "screenshots.json"
   ],
   "scripts": {
     "build": "node build.mjs",
