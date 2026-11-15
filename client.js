@@ -502,7 +502,11 @@
       colorScheme: 1,
     },
     dark: {
-      colors: ['#7189ff', '#3074f9', '#000000'].map(hexToUnit),
+      // The original dark section pairs two blues with black, which leaves the
+      // field blue-only on a black background. Keep the lighter dark-mode blue
+      // and borrow the light palette's warm stops so the dark field also shows
+      // red/gold variation.
+      colors: ['#7189ff', '#f84242', '#ffcf03'].map(hexToUnit),
       background: [0, 0, 0],
       colorScheme: 0,
     },
