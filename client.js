@@ -1131,6 +1131,11 @@
     // Keep the native composer fade. No overlay is inserted into the composer
     // or transcript scroll tree: even fixed descendants can gain a containing
     // block from transformed/contained Electron shell ancestors.
+    // The dark palette fades the composer seat to --dsw-alias-bg-base (#151517),
+    // which reads as a grey band above the near-black particle field. End the
+    // same fade on pure black; light mode keeps its white fade.
+    'body[data-ds-dark-theme] [data-composer-seat]{',
+    'background-image:linear-gradient(180deg, rgba(0,0,0,0) 0px, #000 36px) !important}'
   ].join('');
 
   var ROW_CSS = [
