@@ -166,6 +166,11 @@
     '#dsh-antigravity-canvas{position:fixed;inset:0;display:block;width:100%;height:100%;',
     'z-index:-1;pointer-events:none;opacity:0;transition:opacity .5s ease}',
     '#dsh-antigravity-canvas[data-visible="true"]{opacity:.94}',
+    // The WebGL clear color is #000, but 94% opacity over the theme base
+    // (#151517 in dark mode) composites to about #010101. Make the dark canvas
+    // fully opaque so the particle background is true #000; light mode keeps
+    // the softer 94% layer.
+    'body[data-ds-dark-theme] #dsh-antigravity-canvas[data-visible="true"]{opacity:1}',
     // Tagged by the manager: only full-page surfaces lose their fill, so the
     // particle field shows through the workspace while every control keeps its
     // own background.
